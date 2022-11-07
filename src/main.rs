@@ -1,9 +1,14 @@
+use std::sync::atomic::AtomicBool;
+
 use gtk::{
-    glib::Type, prelude::*, ApplicationWindow, CellAreaBox, CellRendererPixbuf, CellRendererText,
-    ListStore, ScrolledWindow, TreeView, TreeViewColumn, Application,
+    glib::{self, clone, Type},
+    prelude::*,
+    Application, ApplicationWindow, CellAreaBox, CellRendererPixbuf, CellRendererText,
+    GestureClick, ListStore, ScrolledWindow, TreeView, TreeViewColumn,
 };
 
 const APP_ID: &str = "com.toocol.icon_viewer";
+static RIGHT_CLICKED: AtomicBool = AtomicBool::new(false);
 
 fn main() {
     let app = Application::builder().application_id(APP_ID).build();
@@ -39,6 +44,34 @@ fn build_ui(app: &Application) {
         .title("Icon Viewer")
         .child(&scrolled_window)
         .build();
+
+    tree_view.connect_cursor_changed(|tree_view| {
+        if RIGHT_CLICKED.load(std::sync::atomic::Ordering::SeqCst) {
+            let selection = tree_view.selection();
+            if let Some((model, iter)) = selection.selected() {
+                let icon_name = model
+                    .get_value(&iter, 1)
+                    .get::<String>()
+                    .expect("TreeView selection column 1 error.");
+                let clipboard = tree_view.clipboard();
+                clipboard.set_text(&icon_name);
+                println!("Icon name={}, clipboard is_local={}", icon_name, clipboard.is_local());
+            }
+            RIGHT_CLICKED.store(false, std::sync::atomic::Ordering::SeqCst);
+        }
+    });
+
+    let gesture_right_click = GestureClick::new();
+    gesture_right_click.set_button(3);
+    gesture_right_click.connect_pressed(
+        clone!(@weak tree_view => move |_gesture, n_press, _x, _y| {
+            if n_press == 1 {
+                RIGHT_CLICKED.store(true, std::sync::atomic::Ordering::SeqCst);
+            }
+        }),
+    );
+    tree_view.add_controller(&gesture_right_click);
+
     window.present();
 }
 
